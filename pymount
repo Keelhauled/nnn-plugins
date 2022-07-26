@@ -1,5 +1,14 @@
 #!/bin/python
 
+# Description: Curses UI to manage Udisks2 mounts
+#
+# Dependencies: python3, Udisks2
+#
+# Usage: Exits on 'q'
+#
+# Shell: Python3
+# Author: Keelhauled
+
 import urwid
 import dbus
 
