@@ -1,0 +1,80 @@
+#!/bin/python
+
+import urwid
+import dbus
+
+system_bus = dbus.SystemBus()
+service_name = "org.freedesktop.UDisks2"
+
+class BlockDevice:
+    def __init__(self, object_path):
+        interface_block = "org.freedesktop.UDisks2.Block"
+        interface_fs = "org.freedesktop.UDisks2.Filesystem"
+        device_obj = system_bus.get_object(service_name, object_path)
+        self.props = dbus.Interface(device_obj, "org.freedesktop.DBus.Properties")
+        self.is_filesystem:bool = self.props.Get(interface_block, "IdUsage") == "filesystem"
+        self.device_path = ''.join(map(chr, self.props.Get(interface_block, "Device")[:-1]))
+        self.label:str = self.props.Get(interface_block, "IdLabel")
+        if self.is_filesystem:
+            self.filesystem = dbus.Interface(device_obj, interface_fs)
+            self.__update_mountpoints()
+            self.fs_type:str = self.props.Get(interface_block, "IdType")
+
+    def mount(self):
+        if self.is_filesystem:
+            self.filesystem.Mount(dict(fstype=self.fs_type, options="rw"))
+            self.__update_mountpoints()
+
+    def unmount(self):
+        if self.is_filesystem:
+            self.filesystem.Unmount(dict(options=""))
+            self.__update_mountpoints()
+
+    def get_label(self):
+        return f"{self.device_path} ({self.label}) {self.mountpoints}"
+
+    def __update_mountpoints(self):
+        interface_fs = "org.freedesktop.UDisks2.Filesystem"
+        self.mountpoints = list(map(lambda x: ''.join(map(chr, x))[:-1], self.props.Get(interface_fs, "MountPoints")))
+        self.is_mounted = len(self.mountpoints) > 0
+
+
+def handle_input(key):
+    if key == "q":
+        raise urwid.ExitMainLoop()
+
+def item_click(button:urwid.Button, block:BlockDevice):
+    if block.is_mounted:
+        block.unmount()
+    else:
+        block.mount()
+
+    button.set_label(block.get_label())
+
+def main():
+    udisks_manager_obj = system_bus.get_object(service_name, "/org/freedesktop/UDisks2")
+    object_manager = dbus.Interface(udisks_manager_obj, "org.freedesktop.DBus.ObjectManager")
+
+    title = "Manage Udisks2 mounts"
+    body = [urwid.Text(title), urwid.Divider()]
+
+    for object_path in sorted(object_manager.GetManagedObjects()):
+        if not object_path.__contains__("block_device"): continue
+        block = BlockDevice(object_path)
+        if not block.is_filesystem or "/" in block.mountpoints: continue
+        button = urwid.Button(block.get_label())
+        urwid.connect_signal(button, 'click', item_click, block)
+        body.append(urwid.AttrMap(button, None, focus_map='reversed'))
+
+    list_box = urwid.ListBox(urwid.SimpleFocusListWalker(body))
+    main = urwid.Padding(list_box, left=2, right=2)
+    top = urwid.Overlay(main, urwid.SolidFill(u'\N{MEDIUM SHADE}'),
+        align='center', width=('relative', 40),
+        valign='middle', height=('relative', 60),
+        min_width=20, min_height=9)
+
+    urwid.MainLoop(top, palette=[('reversed', 'standout', '')], unhandled_input=handle_input).run()
+
+
+if __name__ == "__main__":
+    main()
