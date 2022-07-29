@@ -2,7 +2,7 @@
 
 # Description: Curses UI to manage Udisks2 mounts
 #
-# Dependencies: python3, Udisks2
+# Dependencies: Python3, Udisks2, Urwid
 #
 # Usage: Exits on 'q'
 #
@@ -39,7 +39,7 @@ class BlockDevice:
             self.filesystem.Unmount(dict(options=""))
             self.__update_mountpoints()
 
-    def get_label(self):
+    def make_display_string(self):
         return f"{self.device_path} ({self.label}) {self.mountpoints}"
 
     def __update_mountpoints(self):
@@ -57,8 +57,7 @@ def item_click(button:urwid.Button, block:BlockDevice):
         block.unmount()
     else:
         block.mount()
-
-    button.set_label(block.get_label())
+    button.set_label(block.make_display_string())
 
 def main():
     udisks_manager_obj = system_bus.get_object(service_name, "/org/freedesktop/UDisks2")
@@ -71,7 +70,7 @@ def main():
         if not object_path.__contains__("block_device"): continue
         block = BlockDevice(object_path)
         if not block.is_filesystem or "/" in block.mountpoints: continue
-        button = urwid.Button(block.get_label())
+        button = urwid.Button(block.make_display_string())
         urwid.connect_signal(button, 'click', item_click, block)
         body.append(urwid.AttrMap(button, None, focus_map='reversed'))
 
